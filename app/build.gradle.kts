@@ -66,13 +66,11 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
             isMinifyEnabled = false
-            // Eigener Launcher-Name, damit Debug- und Release-App auf demselben
-            // Geraet auf einen Blick unterscheidbar sind.
-            manifestPlaceholders["appLabel"] = "ApkCreator Debug"
+            // Der abweichende App-Name der Debug-Variante kommt aus
+            // src/debug/res/values/strings.xml und ueberschreibt dort app_name.
         }
 
         release {
-            manifestPlaceholders["appLabel"] = "ApkCreator"
             // R8: Code schrumpfen/obfuskieren und ungenutzte Ressourcen entfernen.
             isMinifyEnabled = true
             isShrinkResources = true
