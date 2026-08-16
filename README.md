@@ -107,6 +107,21 @@ Alles in `apkcreator.json`. Weglassen ist erlaubt — dann gilt der Standardwert
 > das für Android als völlig neue App — ein Update ist dann nicht mehr möglich,
 > die alte muss deinstalliert werden. Überlege sie dir also einmal in Ruhe.
 
+Vertippt? Kein Problem: Der Build prüft deine Angaben, **bevor** er loslegt, und
+sagt dir im Klartext, was zu ändern ist:
+
+```
+============================================================
+  Fehler in der Konfiguration (apkcreator.json)
+============================================================
+  "packageId" ist "Meine App" - das ist keine gueltige Paket-ID.
+
+  So behebst du es:
+  Erlaubt sind nur Buchstaben, Ziffern und Unterstriche, getrennt
+  durch mindestens einen Punkt. ...
+============================================================
+```
+
 ### Ohne Dateien bearbeiten
 
 Du kannst Name, Paket-ID und Version auch direkt beim Start eintippen:
@@ -157,6 +172,7 @@ ZIP, ein Tap zum Download. Die Release Notes entstehen automatisch aus deinen
 | App zeigt „Noch keine App hochgeladen" | Es fehlt `webapp/index.html`. Auf exakte Kleinschreibung achten. |
 | Weiße Seite nach dem Start | Meist absolute Pfade wie `/assets/app.js`. Auf relative Pfade umstellen (`assets/app.js`). |
 | Build ist rot | **Actions** → fehlgeschlagenen Lauf öffnen → roter Schritt zeigt den Grund im Klartext. |
+| „Fehler in der Konfiguration" | Ein Wert in `apkcreator.json` ist ungültig. Die Meldung nennt Schlüssel, Wert und Lösung. |
 | Icon sieht abgeschnitten aus | Motiv mittig platzieren und rundherum Luft lassen — Android beschneidet Icons je nach Gerät. |
 | Update lässt sich nicht installieren | Die `packageId` wurde geändert. Alte App deinstallieren oder alte ID zurücksetzen. |
 

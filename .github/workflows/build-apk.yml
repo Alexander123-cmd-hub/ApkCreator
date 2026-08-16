@@ -54,6 +54,11 @@ concurrency:
 env:
   # AGP 8.7.3 setzt JDK 17 voraus, und das jvmTarget der Module ist ebenfalls 17.
   JAVA_VERSION: "17"
+  # Ohne UTF-8-Locale liest die JVM Umgebungsvariablen als ASCII - ein
+  # App-Name wie "Grüße", der beim manuellen Start eingetippt wird, kaeme
+  # dann verstuemmelt in der APK an.
+  LANG: C.UTF-8
+  LC_ALL: C.UTF-8
 
 jobs:
   # =========================================================================

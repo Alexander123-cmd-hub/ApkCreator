@@ -40,11 +40,91 @@ fun setting(envName: String, jsonKey: String, fallback: String): String =
 val appName = setting("APP_NAME", "appName", "Meine App")
 val appPackageId = setting("PACKAGE_ID", "packageId", "de.meinefirma.meineapp")
 val appVersionName = setting("VERSION_NAME", "versionName", "1.0.0")
-val appVersionCode = setting("VERSION_CODE", "versionCode", "1").toIntOrNull() ?: 1
-val appStartUrl = setting("START_URL", "startUrl", "index.html")
 val appIconBackground = setting("ICON_BACKGROUND_COLOR", "iconBackgroundColor", "#2E6A4F")
 val appOrientation = setting("ORIENTATION", "orientation", "unspecified")
 val openLinksExternally = setting("OPEN_EXTERNAL_LINKS", "openExternalLinksInBrowser", "true").toBoolean()
+
+// Fuehrende und abschliessende Schraegstriche sind ein naheliegender Tippfehler.
+// Sie werden hier entfernt, damit Startseiten-Pruefung und geladene Adresse
+// in der App garantiert denselben Pfad verwenden.
+val appStartUrl = setting("START_URL", "startUrl", "index.html").trim().trim('/')
+
+// ===========================================================================
+// 1a. Eingaben pruefen
+//
+// Ohne diese Pruefung scheitert der Build erst spaet und mit einer Meldung wie
+// "attribute 'package' ... is not a valid Android package name" - fuer jemanden
+// ohne Android-Erfahrung nicht zu deuten. Lieber sofort und im Klartext.
+// ===========================================================================
+
+fun configError(problem: String, solution: String): Nothing {
+    // Jede Zeile einzeln einruecken - sonst steht nur die erste Zeile der
+    // Loesung buendig und der Rest klebt am linken Rand.
+    fun indent(text: String) = text.lines().joinToString("\n") { "  $it" }
+
+    throw GradleException(
+        buildString {
+            appendLine()
+            appendLine("============================================================")
+            appendLine("  Fehler in der Konfiguration (apkcreator.json)")
+            appendLine("============================================================")
+            appendLine(indent(problem))
+            appendLine()
+            appendLine("  So behebst du es:")
+            appendLine(indent(solution))
+            appendLine("============================================================")
+        },
+    )
+}
+
+if (!Regex("^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$").matches(appPackageId)) {
+    configError(
+        problem = "\"packageId\" ist \"$appPackageId\" - das ist keine gueltige Paket-ID.",
+        solution = """
+            Erlaubt sind nur Buchstaben, Ziffern und Unterstriche, getrennt
+            durch mindestens einen Punkt. Jeder Teil muss mit einem Buchstaben
+            beginnen. Keine Leerzeichen, keine Umlaute, keine Bindestriche.
+
+            Gut:     de.meinname.meineapp
+            Schlecht: Meine App   /   de.mein-name.app   /   app
+        """.trimIndent(),
+    )
+}
+
+val appVersionCodeRaw = setting("VERSION_CODE", "versionCode", "1")
+val appVersionCode = appVersionCodeRaw.toIntOrNull()
+    ?: configError(
+        problem = "\"versionCode\" ist \"$appVersionCodeRaw\" - das ist keine ganze Zahl.",
+        solution = "Trage eine Zahl ohne Anfuehrungszeichen ein, z. B. 1. Bei jedem Update erhoehen.",
+    )
+if (appVersionCode < 1) {
+    configError(
+        problem = "\"versionCode\" ist $appVersionCode - der Wert muss mindestens 1 sein.",
+        solution = "Trage 1 ein und erhoehe die Zahl bei jedem Update.",
+    )
+}
+
+if (!Regex("^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})\$").matches(appIconBackground)) {
+    configError(
+        problem = "\"iconBackgroundColor\" ist \"$appIconBackground\" - das ist keine gueltige Farbe.",
+        solution = "Erwartet wird ein Hex-Wert mit Raute, z. B. #2E6A4F. Farbwaehler: https://htmlcolorcodes.com",
+    )
+}
+
+val allowedOrientations = setOf("unspecified", "portrait", "landscape", "sensorPortrait", "sensorLandscape", "fullSensor")
+if (appOrientation !in allowedOrientations) {
+    configError(
+        problem = "\"orientation\" ist \"$appOrientation\" - dieser Wert ist nicht erlaubt.",
+        solution = "Moeglich sind: ${allowedOrientations.joinToString(", ")}",
+    )
+}
+
+if (appStartUrl.isEmpty()) {
+    configError(
+        problem = "\"startUrl\" ist leer.",
+        solution = "Trage die Startseite ein, ueblicherweise index.html.",
+    )
+}
 
 // Der Ordner, in den Nutzer ihre Web-App legen. Existiert er nicht, startet die
 // App mit einem Hinweisbildschirm statt zu crashen.
