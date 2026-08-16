@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ApkCreator Studio</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f5f7f6; --surface: #fff; --surface2: #eef2f0;
+  --text: #14211a; --muted: #5b6862; --border: #dde4e0;
+  --accent: #2e6a4f; --accent-text: #fff;
+  --ok: #1e7a4d; --warn: #8a6100; --err: #b3261e;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1412; --surface: #171d1a; --surface2: #1f2724;
+    --text: #e6ece8; --muted: #a3b0aa; --border: #2b3430;
+    --accent: #7fcfa6; --accent-text: #0b1410;
+    --ok: #7fcfa6; --warn: #e0b463; --err: #ef9a93;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.55;
+}
+.wrap { max-width: 46rem; margin: 0 auto; padding: 1.25rem 1rem 4rem; }
+header h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+header p { color: var(--muted); margin: 0 0 1.5rem; }
+.step {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 1.1rem; margin-bottom: 1rem;
+}
+.step > h2 {
+  font-size: 1.05rem; margin: 0 0 .85rem;
+  display: flex; align-items: center; gap: .6rem;
+}
+.num {
+  flex: 0 0 auto; width: 1.65rem; height: 1.65rem; border-radius: 50%;
+  background: var(--accent); color: var(--accent-text);
+  display: grid; place-items: center; font-size: .85rem; font-weight: 700;
+}
+label { display: block; font-size: .85rem; font-weight: 600; margin: .8rem 0 .25rem; }
+label:first-of-type { margin-top: 0; }
+.hint { font-size: .8rem; color: var(--muted); margin: .25rem 0 0; }
+input[type=text], input[type=password], input[type=number], select {
+  width: 100%; padding: .6rem .7rem; font: inherit;
+  color: var(--text); background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 9px;
+}
+input[type=color] {
+  width: 3.2rem; height: 2.4rem; padding: 2px; vertical-align: middle;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 9px;
+}
+input.bad { border-color: var(--err); }
+.row { display: flex; gap: .6rem; flex-wrap: wrap; }
+.row > * { flex: 1 1 9rem; }
+button {
+  appearance: none; font: inherit; font-weight: 600; cursor: pointer;
+  padding: .7rem 1rem; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface2); color: var(--text);
+}
+button.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; }
+button.wide { width: 100%; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.drop {
+  border: 2px dashed var(--border); border-radius: 12px;
+  padding: 1.4rem 1rem; text-align: center; color: var(--muted);
+  background: var(--surface2);
+}
+.drop.over { border-color: var(--accent); color: var(--text); }
+.files { list-style: none; margin: .8rem 0 0; padding: 0; font-size: .85rem; }
+.files li {
+  display: flex; justify-content: space-between; gap: .5rem;
+  padding: .3rem 0; border-bottom: 1px solid var(--border);
+}
+.files li span:last-child { color: var(--muted); white-space: nowrap; }
+.badge {
+  display: inline-block; font-size: .75rem; padding: .1rem .5rem;
+  border-radius: 999px; background: var(--surface2); color: var(--muted);
+  border: 1px solid var(--border);
+}
+#log {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .8rem; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 10px; padding: .7rem; margin-top: .9rem;
+  max-height: 16rem; overflow: auto; white-space: pre-wrap; word-break: break-word;
+}
+#log:empty { display: none; }
+.ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); }
+details { margin-top: .8rem; }
+summary { cursor: pointer; font-size: .85rem; color: var(--muted); }
+a { color: var(--accent); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>ApkCreator Studio</h1>
+  <p>Dateien auswählen, Angaben eintragen, fertige App herunterladen.</p>
+</header>
+
+<!-- ============================ 1. Verbindung ============================ -->
+<section class="step">
+  <h2><span class="num">1</span> Verbindung <span id="connBadge" class="badge">nicht verbunden</span></h2>
+
+  <div class="row">
+    <div><label for="owner">GitHub-Benutzer</label><input type="text" id="owner" autocomplete="off" spellcheck="false"></div>
+    <div><label for="repo">Repository</label><input type="text" id="repo" autocomplete="off" spellcheck="false"></div>
+  </div>
+
+  <label for="token">Zugriffs-Token</label>
+  <input type="password" id="token" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
+  <p class="hint">
+    Wird nur in diesem Browser gespeichert und ausschließlich an
+    <code>api.github.com</code> gesendet.
+  </p>
+
+  <details>
+    <summary>Wie bekomme ich ein Token?</summary>
+    <p class="hint">
+      1. Öffne <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Fine-grained&nbsp;Token&nbsp;anlegen</a><br>
+      2. Bei <em>Repository access</em> dieses Repository auswählen<br>
+      3. Bei <em>Permissions → Repository permissions</em> setzen:<br>
+      &nbsp;&nbsp;• <strong>Contents</strong>: Read and write<br>
+      &nbsp;&nbsp;• <strong>Actions</strong>: Read and write<br>
+      4. Token erzeugen und hier einfügen
+    </p>
+  </details>
+
+  <div class="row" style="margin-top:.9rem">
+    <button id="connect" class="primary">Verbinden</button>
+    <button id="forget">Token löschen</button>
+  </div>
+</section>
+
+<!-- ============================= 2. Dateien ============================= -->
+<section class="step">
+  <h2><span class="num">2</span> Deine App-Dateien</h2>
+
+  <div class="drop" id="drop">
+    Dateien hierher ziehen<br>
+    <small>oder unten auswählen — <strong>index.html</strong> muss dabei sein</small>
+  </div>
+
+  <div class="row" style="margin-top:.7rem">
+    <button id="pickFiles">Dateien wählen</button>
+    <button id="pickFolder">Ordner wählen</button>
+  </div>
+  <input type="file" id="fileInput" multiple class="sr">
+  <input type="file" id="folderInput" webkitdirectory directory multiple class="sr">
+
+  <ul class="files" id="fileList"></ul>
+  <p class="hint" id="fileNote">Noch nichts ausgewählt — dann bleiben die bisherigen Dateien im Repository unverändert.</p>
+</section>
+
+<!-- =========================== 3. App-Angaben =========================== -->
+<section class="step">
+  <h2><span class="num">3</span> Angaben zur App</h2>
+
+  <label for="appName">Name der App</label>
+  <input type="text" id="appName" placeholder="Meine App">
+
+  <label for="packageId">Paket-ID</label>
+  <input type="text" id="packageId" placeholder="de.meinname.meineapp" autocomplete="off" spellcheck="false">
+  <p class="hint" id="pkgHint">Eindeutige Kennung. Kleinbuchstaben, mindestens ein Punkt, keine Leerzeichen oder Umlaute.</p>
+
+  <div class="row">
+    <div><label for="versionName">Version</label><input type="text" id="versionName" placeholder="1.0.0"></div>
+    <div><label for="startUrl">Startseite</label><input type="text" id="startUrl" placeholder="index.html"></div>
+  </div>
+
+  <div class="row">
+    <div>
+      <label for="orientation">Bildschirm</label>
+      <select id="orientation">
+        <option value="unspecified">automatisch drehen</option>
+        <option value="portrait">immer hochkant</option>
+        <option value="landscape">immer quer</option>
+      </select>
+    </div>
+    <div>
+      <label for="iconColor">Farbe hinter dem Icon</label>
+      <input type="color" id="iconColor" value="#2e6a4f">
+    </div>
+  </div>
+
+  <label for="iconInput">Icon (PNG, quadratisch, ab 512×512)</label>
+  <input type="file" id="iconInput" accept="image/png">
+  <p class="hint" id="iconNote">Ohne Auswahl bleibt das bisherige Icon erhalten.</p>
+</section>
+
+<!-- ============================== 4. Bauen ============================== -->
+<section class="step">
+  <h2><span class="num">4</span> App bauen</h2>
+
+  <label for="buildKind">Art der App</label>
+  <select id="buildKind">
+    <option value="debug">Zum Ausprobieren (schnell, ohne Einrichtung)</option>
+    <option value="release">Zum Weitergeben (signiert, benötigt eingerichtete Secrets)</option>
+  </select>
+  <p class="hint" id="kindNote">
+    Die Weitergabe-Variante ist kleiner und für den Play Store geeignet.
+    Sie setzt voraus, dass die vier Keystore-Secrets hinterlegt sind
+    (siehe <a id="ciLink" href="https://github.com/" target="_blank" rel="noopener">docs/CI.md</a>).
+  </p>
+
+  <button id="build" class="primary wide" style="margin-top:1rem" disabled>Zuerst verbinden</button>
+  <div id="log"></div>
+  <div id="result"></div>
+</section>
+
+<p class="hint" style="text-align:center">
+  <a href="https://github.com/" id="repoLink" target="_blank" rel="noopener">Repository auf GitHub</a>
+</p>
+
+</div>
+
+<script>
+(() => {
+'use strict';
+
+const API = 'https://api.github.com';
+const LS = 'apkcreator.studio';
+const $ = (id) => document.getElementById(id);
+
+const state = {
+  owner: '', repo: '', token: '', branch: 'main',
+  connected: false,
+  files: [],        // { path, file }
+  icon: null,       // File
+  // Bestehende apkcreator.json aus dem Repository. Beim Bauen werden nur die
+  // Felder ueberschrieben, die die Oberflaeche anbietet - alles andere
+  // (z. B. ein selbst gesetzter versionCode) bleibt erhalten.
+  baseConfig: {},
+};
+
+// ------------------------------------------------------------------ Logging
+function log(msg, cls) {
+  const el = $('log');
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+function clearLog() { $('log').textContent = ''; $('result').textContent = ''; }
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ---------------------------------------------------------------- GitHub API
+async function api(path, opts = {}) {
+  const res = await fetch(`${API}/repos/${state.owner}/${state.repo}/${path}`, {
+    method: opts.method || 'GET',
+    headers: {
+      'Authorization': `Bearer ${state.token}`,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  if (!res.ok) {
+    let detail = '';
+    try { detail = (await res.json()).message || ''; } catch { /* leerer Body */ }
+    throw new Error(`${res.status} ${res.statusText}${detail ? ' – ' + detail : ''}`);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+// ------------------------------------------------------------------- Base64
+function toBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const CHUNK = 0x8000;                       // grosse Dateien nicht auf einmal
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+const readFile = (file) => new Promise((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(r.result);
+  r.onerror = () => reject(new Error(`Datei nicht lesbar: ${file.name}`));
+  r.readAsArrayBuffer(file);
+});
+
+// --------------------------------------------------------------- Persistenz
+function save() {
+  const keep = {
+    owner: state.owner, repo: state.repo, token: state.token,
+    appName: $('appName').value, packageId: $('packageId').value,
+    versionName: $('versionName').value, startUrl: $('startUrl').value,
+    orientation: $('orientation').value, iconColor: $('iconColor').value,
+  };
+  try { localStorage.setItem(LS, JSON.stringify(keep)); } catch { /* Privatmodus */ }
+}
+function load() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(LS) || '{}'); } catch { /* kaputt */ }
+
+  // Aus der Adresse ableiten: benutzer.github.io/Repo/
+  // Nur auf GitHub Pages - sonst wuerde beim lokalen Oeffnen ueber file://
+  // ein beliebiges Pfadstueck als Repository-Name erscheinen.
+  const onPages = location.hostname.endsWith('.github.io');
+  const host = onPages ? location.hostname.replace('.github.io', '') : '';
+  const seg = onPages ? (location.pathname.split('/').filter(Boolean)[0] || '') : '';
+
+  $('owner').value = saved.owner || host;
+  $('repo').value = saved.repo || seg;
+  $('token').value = saved.token || '';
+  $('appName').value = saved.appName || '';
+  $('packageId').value = saved.packageId || '';
+  $('versionName').value = saved.versionName || '';
+  $('startUrl').value = saved.startUrl || '';
+  if (saved.orientation) $('orientation').value = saved.orientation;
+  if (saved.iconColor) $('iconColor').value = saved.iconColor;
+}
+
+// -------------------------------------------------------------- Validierung
+const PKG = /^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/i;
+function checkPackage() {
+  const v = $('packageId').value.trim();
+  const bad = v !== '' && !PKG.test(v);
+  $('packageId').classList.toggle('bad', bad);
+  $('pkgHint').className = bad ? 'hint err' : 'hint';
+  $('pkgHint').textContent = bad
+    ? `„${v}" ist keine gültige Paket-ID. Beispiel: de.meinname.meineapp`
+    : 'Eindeutige Kennung. Kleinbuchstaben, mindestens ein Punkt, keine Leerzeichen oder Umlaute.';
+  return !bad;
+}
+
+// ------------------------------------------------------------ Dateiauswahl
+function setFiles(list) {
+  const picked = Array.from(list);
+  if (!picked.length) return;
+
+  // Bei Ordnerauswahl liefert der Browser Pfade wie "meinordner/index.html".
+  // Der oberste Ordner gehoert nicht in die App - er wird entfernt, sonst
+  // liegt index.html eine Ebene zu tief und die App bliebe leer.
+  let paths = picked.map((f) => f.webkitRelativePath || f.name);
+  const tops = new Set(paths.map((p) => (p.includes('/') ? p.split('/')[0] : null)));
+  if (tops.size === 1 && !tops.has(null)) {
+    paths = paths.map((p) => p.split('/').slice(1).join('/'));
+  }
+
+  state.files = picked
+    .map((file, i) => ({ path: paths[i], file }))
+    .filter((e) => e.path && !e.path.startsWith('.') && !e.path.includes('/.'));
+
+  renderFiles();
+}
+function renderFiles() {
+  const ul = $('fileList');
+  ul.textContent = '';
+  const hasIndex = state.files.some((e) => e.path === $('startUrl').value.trim() || e.path === 'index.html');
+
+  for (const e of state.files.slice(0, 40)) {
+    const li = document.createElement('li');
+    const a = document.createElement('span'); a.textContent = e.path;
+    const b = document.createElement('span'); b.textContent = `${Math.max(1, Math.round(e.file.size / 1024))} kB`;
+    li.append(a, b); ul.appendChild(li);
+  }
+  if (state.files.length > 40) {
+    const li = document.createElement('li');
+    li.textContent = `… und ${state.files.length - 40} weitere`;
+    ul.appendChild(li);
+  }
+
+  const note = $('fileNote');
+  if (!state.files.length) {
+    note.className = 'hint';
+    note.textContent = 'Noch nichts ausgewählt — dann bleiben die bisherigen Dateien im Repository unverändert.';
+  } else if (!hasIndex) {
+    note.className = 'hint err';
+    note.textContent = 'Achtung: keine index.html dabei. Die App würde nur den Hinweisbildschirm zeigen.';
+  } else {
+    note.className = 'hint ok';
+    note.textContent = `${state.files.length} Datei(en) bereit. Sie ersetzen den bisherigen Inhalt von webapp/.`;
+  }
+}
+
+// ------------------------------------------------------------------ Verbinden
+async function connect() {
+  state.owner = $('owner').value.trim();
+  state.repo = $('repo').value.trim();
+  state.token = $('token').value.trim();
+  clearLog();
+
+  if (!state.owner || !state.repo || !state.token) {
+    log('Bitte Benutzer, Repository und Token ausfüllen.', 'err');
+    return;
+  }
+  try {
+    log('Verbinde …');
+    const info = await api('');
+    state.branch = info.default_branch || 'main';
+    state.connected = true;
+    $('connBadge').textContent = `${info.full_name} · ${state.branch}`;
+    $('connBadge').className = 'badge ok';
+    $('build').disabled = false;
+    $('build').textContent = 'App bauen';
+    $('repoLink').href = info.html_url;
+    // Auf GitHub Pages wandelt Jekyll .md in .html um - ein relativer Link
+    // auf CI.md liefe ins Leere. Darum auf die Datei im Repository zeigen.
+    $('ciLink').href = `${info.html_url}/blob/${state.branch}/docs/CI.md`;
+    log('Verbunden.', 'ok');
+
+    // Vorhandene Konfiguration uebernehmen, damit die Felder stimmen.
+    try {
+      const f = await api(`contents/apkcreator.json?ref=${state.branch}`);
+      const cfg = JSON.parse(decodeURIComponent(escape(atob(f.content.replace(/\n/g, '')))));
+      state.baseConfig = cfg;
+      if (!$('appName').value) $('appName').value = cfg.appName || '';
+      if (!$('packageId').value) $('packageId').value = cfg.packageId || '';
+      if (!$('versionName').value) $('versionName').value = cfg.versionName || '';
+      if (!$('startUrl').value) $('startUrl').value = cfg.startUrl || 'index.html';
+      if (cfg.orientation) $('orientation').value = cfg.orientation;
+      if (cfg.iconBackgroundColor) $('iconColor').value = cfg.iconBackgroundColor;
+      log('Bisherige Einstellungen übernommen.');
+    } catch {
+      log('Keine apkcreator.json gefunden – es gelten Standardwerte.', 'warn');
+    }
+    save();
+  } catch (e) {
+    state.connected = false;
+    $('connBadge').textContent = 'nicht verbunden';
+    $('connBadge').className = 'badge err';
+    log(`Verbindung fehlgeschlagen: ${e.message}`, 'err');
+    if (String(e.message).startsWith('404')) {
+      log('Prüfe Benutzer/Repository und ob das Token Zugriff auf genau dieses Repository hat.', 'warn');
+    }
+  }
+}
+
+// -------------------------------------------------------------- Commit bauen
+async function pushChanges(entries, replaceWebapp) {
+  const ref = await api(`git/ref/heads/${state.branch}`);
+  const baseSha = ref.object.sha;
+  const baseCommit = await api(`git/commits/${baseSha}`);
+  const baseTree = baseCommit.tree.sha;
+
+  const tree = [];
+
+  if (replaceWebapp) {
+    // Alte webapp-Dateien entfernen, die nicht neu hochgeladen wurden -
+    // sonst blieben Reste der vorherigen App in der APK zurueck.
+    const full = await api(`git/trees/${baseTree}?recursive=1`);
+    const incoming = new Set(entries.map((e) => e.path));
+    for (const item of full.tree) {
+      if (item.type !== 'blob') continue;
+      if (!item.path.startsWith('webapp/')) continue;
+      if (item.path === 'webapp/README.md') continue;   // Anleitung behalten
+      if (incoming.has(item.path)) continue;
+      tree.push({ path: item.path, mode: item.mode, type: 'blob', sha: null });
+    }
+    if (tree.length) log(`${tree.length} alte Datei(en) werden ersetzt.`);
+  }
+
+  let n = 0;
+  for (const e of entries) {
+    const blob = await api('git/blobs', {
+      method: 'POST',
+      body: { content: e.base64, encoding: 'base64' },
+    });
+    tree.push({ path: e.path, mode: '100644', type: 'blob', sha: blob.sha });
+    n += 1;
+    if (n % 5 === 0 || n === entries.length) log(`… ${n}/${entries.length} hochgeladen`);
+  }
+
+  if (!tree.length) return null;
+
+  const newTree = await api('git/trees', { method: 'POST', body: { base_tree: baseTree, tree } });
+  if (newTree.sha === baseTree) return null;               // nichts geaendert
+
+  const commit = await api('git/commits', {
+    method: 'POST',
+    body: { message: 'Studio: App-Dateien und Einstellungen aktualisiert', tree: newTree.sha, parents: [baseSha] },
+  });
+  await api(`git/refs/heads/${state.branch}`, { method: 'PATCH', body: { sha: commit.sha } });
+  return commit.sha;
+}
+
+// ------------------------------------------------------------------ Warten
+async function waitForRun(sha) {
+  for (let i = 0; i < 40; i++) {
+    const r = await api(`actions/runs?head_sha=${sha}&per_page=5`);
+    const run = (r.workflow_runs || [])[0];
+    if (run) return run;
+    await sleep(3000);
+  }
+  throw new Error('Es wurde kein Build gestartet. Sind GitHub Actions im Repository aktiviert?');
+}
+async function waitUntilDone(runId) {
+  let last = '';
+  for (let i = 0; i < 200; i++) {
+    const run = await api(`actions/runs/${runId}`);
+    if (run.status !== last) { log(`Build: ${run.status}`); last = run.status; }
+    if (run.status === 'completed') return run;
+    await sleep(5000);
+  }
+  throw new Error('Zeitüberschreitung – der Build läuft eventuell noch.');
+}
+
+// --------------------------------------------------------------- ZIP -> APK
+async function apkFromZip(buffer) {
+  const dv = new DataView(buffer);
+  let eocd = -1;
+  for (let i = buffer.byteLength - 22; i >= 0 && i > buffer.byteLength - 22 - 65536; i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('Unerwartetes Archivformat.');
+
+  const count = dv.getUint16(eocd + 10, true);
+  let off = dv.getUint32(eocd + 16, true);
+
+  for (let n = 0; n < count; n++) {
+    if (dv.getUint32(off, true) !== 0x02014b50) break;
+    const method = dv.getUint16(off + 10, true);
+    const compSize = dv.getUint32(off + 20, true);
+    const nameLen = dv.getUint16(off + 28, true);
+    const extraLen = dv.getUint16(off + 30, true);
+    const commentLen = dv.getUint16(off + 32, true);
+    const localOff = dv.getUint32(off + 42, true);
+    const name = new TextDecoder().decode(new Uint8Array(buffer, off + 46, nameLen));
+    off += 46 + nameLen + extraLen + commentLen;
+
+    if (!name.toLowerCase().endsWith('.apk')) continue;
+
+    const ldv = new DataView(buffer, localOff, 30);
+    const dataStart = localOff + 30 + ldv.getUint16(26, true) + ldv.getUint16(28, true);
+    const raw = buffer.slice(dataStart, dataStart + compSize);
+
+    if (method === 0) return { name, bytes: new Uint8Array(raw) };
+    if (method === 8) {
+      const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      return { name, bytes: new Uint8Array(await new Response(stream).arrayBuffer()) };
+    }
+    throw new Error(`Unbekannte Komprimierung (${method}).`);
+  }
+  return null;
+}
+
+function offerDownload(name, bytes) {
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.android.package-archive' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  a.textContent = `⬇ ${name} herunterladen (${(bytes.length / 1048576).toFixed(1)} MB)`;
+  a.className = 'badge';
+  a.style.cssText = 'display:block;text-align:center;padding:.8rem;margin-top:.9rem;font-size:1rem;font-weight:700;background:var(--accent);color:var(--accent-text);border:none';
+  $('result').appendChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 10 * 60 * 1000);
+}
+
+async function deliver(run) {
+  const arts = await api(`actions/runs/${run.id}/artifacts`);
+  const art = (arts.artifacts || []).find((a) => a.name.startsWith('apk-'));
+  if (!art) throw new Error('Der Build hat keine APK erzeugt.');
+
+  log('Lade APK …');
+  const res = await fetch(`${API}/repos/${state.owner}/${state.repo}/actions/artifacts/${art.id}/zip`, {
+    headers: { 'Authorization': `Bearer ${state.token}`, 'Accept': 'application/vnd.github+json' },
+  });
+  if (!res.ok) throw new Error(`Download fehlgeschlagen (${res.status}).`);
+
+  const found = await apkFromZip(await res.arrayBuffer());
+  if (!found) throw new Error('Im Archiv war keine APK.');
+  log('Fertig.', 'ok');
+  offerDownload(found.name, found.bytes);
+}
+
+function linkToRun(run) {
+  const a = document.createElement('a');
+  a.href = run.html_url; a.target = '_blank'; a.rel = 'noopener';
+  a.textContent = 'Build auf GitHub öffnen';
+  a.className = 'hint';
+  a.style.cssText = 'display:block;text-align:center;margin-top:.7rem';
+  $('result').appendChild(a);
+}
+
+// -------------------------------------------------------------------- Bauen
+async function build() {
+  if (!state.connected) return;
+  if (!checkPackage()) { log('Bitte zuerst die Paket-ID korrigieren.', 'err'); return; }
+
+  const btn = $('build');
+  btn.disabled = true; btn.textContent = 'läuft …';
+  clearLog();
+
+  try {
+    const cfg = {
+      // Vorhandene Werte als Grundlage, damit selbst gesetzte Felder wie
+      // versionCode nicht bei jedem Bauen zurueckgesetzt werden.
+      versionCode: 1,
+      openExternalLinksInBrowser: true,
+      ...state.baseConfig,
+      appName: $('appName').value.trim() || 'Meine App',
+      packageId: $('packageId').value.trim() || 'de.meinefirma.meineapp',
+      versionName: $('versionName').value.trim() || '1.0.0',
+      startUrl: $('startUrl').value.trim() || 'index.html',
+      iconBackgroundColor: $('iconColor').value,
+      orientation: $('orientation').value,
+    };
+
+    const entries = [{
+      path: 'apkcreator.json',
+      base64: btoa(unescape(encodeURIComponent(JSON.stringify(cfg, null, 2) + '\n'))),
+    }];
+
+    for (const e of state.files) {
+      entries.push({ path: `webapp/${e.path}`, base64: toBase64(await readFile(e.file)) });
+    }
+    if (state.icon) {
+      entries.push({ path: 'branding/icon.png', base64: toBase64(await readFile(state.icon)) });
+    }
+
+    log(`Übertrage ${entries.length} Datei(en) …`);
+    const sha = await pushChanges(entries, state.files.length > 0);
+
+    if (!sha) {
+      log('Nichts geändert – es gibt nichts Neues zu bauen.', 'warn');
+      return;
+    }
+    log(`Commit ${sha.slice(0, 7)} erstellt.`, 'ok');
+
+    if ($('buildKind').value === 'release') {
+      const tag = `v${cfg.versionName}`;
+      log(`Erzeuge Release ${tag} …`);
+      try {
+        await api('git/refs', { method: 'POST', body: { ref: `refs/tags/${tag}`, sha } });
+      } catch (e) {
+        throw new Error(
+          String(e.message).includes('already exists')
+            ? `Die Version ${cfg.versionName} gibt es schon. Erhöhe die Versionsnummer.`
+            : e.message,
+        );
+      }
+    }
+
+    log('Warte auf den Build …');
+    const started = await waitForRun(sha);
+    linkToRun(started);
+    const done = await waitUntilDone(started.id);
+
+    if (done.conclusion !== 'success') {
+      log(`Build fehlgeschlagen (${done.conclusion}). Details über den Link unten.`, 'err');
+      return;
+    }
+    await deliver(done);
+  } catch (e) {
+    log(e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = 'App bauen';
+  }
+}
+
+// ------------------------------------------------------------------- Events
+$('connect').addEventListener('click', connect);
+$('forget').addEventListener('click', () => {
+  try { localStorage.removeItem(LS); } catch { /* egal */ }
+  $('token').value = '';
+  state.token = ''; state.connected = false;
+  $('build').disabled = true; $('build').textContent = 'Zuerst verbinden';
+  $('connBadge').textContent = 'nicht verbunden'; $('connBadge').className = 'badge';
+  clearLog(); log('Token gelöscht.');
+});
+$('build').addEventListener('click', build);
+$('packageId').addEventListener('input', checkPackage);
+$('startUrl').addEventListener('input', renderFiles);
+for (const id of ['appName', 'packageId', 'versionName', 'startUrl', 'orientation', 'iconColor', 'owner', 'repo']) {
+  $(id).addEventListener('change', save);
+}
+
+$('pickFiles').addEventListener('click', () => $('fileInput').click());
+$('pickFolder').addEventListener('click', () => $('folderInput').click());
+$('fileInput').addEventListener('change', (e) => setFiles(e.target.files));
+$('folderInput').addEventListener('change', (e) => setFiles(e.target.files));
+$('iconInput').addEventListener('change', (e) => {
+  state.icon = e.target.files[0] || null;
+  $('iconNote').className = state.icon ? 'hint ok' : 'hint';
+  $('iconNote').textContent = state.icon
+    ? `${state.icon.name} wird als Launcher-Icon verwendet.`
+    : 'Ohne Auswahl bleibt das bisherige Icon erhalten.';
+});
+
+const drop = $('drop');
+['dragenter', 'dragover'].forEach((t) => drop.addEventListener(t, (e) => {
+  e.preventDefault(); drop.classList.add('over');
+}));
+['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, () => drop.classList.remove('over')));
+drop.addEventListener('drop', (e) => { e.preventDefault(); setFiles(e.dataTransfer.files); });
+drop.addEventListener('click', () => $('fileInput').click());
+
+load();
+checkPackage();
+if ($('owner').value && $('repo').value && $('token').value) connect();
+})();
+</script>
+</body>
+</html>

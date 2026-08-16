@@ -17,7 +17,38 @@ Android Studio. Die Umwandlung passiert auf GitHubs Servern.
 
 ---
 
-## In 4 Schritten zur eigenen App
+## Zwei Wege
+
+| | **Studio** (grafisch) | **Klassisch** (über GitHub) |
+| --- | --- | --- |
+| Dateien | im Formular auswählen | im Ordner `webapp/` hochladen |
+| Einstellungen | Eingabefelder | `apkcreator.json` bearbeiten |
+| APK bekommen | Knopf → Download | Actions → Artefakt → ZIP entpacken |
+| Einrichtung | einmalig Pages + Token | keine |
+
+Das **Studio** ist eine Web-Oberfläche: Dateien auswählen, Name und Icon
+eintragen, auf *App bauen* tippen — die fertige APK lädt direkt herunter,
+ohne ZIP und ohne Umweg über die Actions-Seite. Es läuft komplett im
+Browser, auch auf dem Handy.
+
+**Studio einrichten** (einmalig, 2 Minuten):
+
+1. **Settings → Pages** → bei *Source* **Deploy from a branch** wählen,
+   Branch `main`, Ordner **`/docs`** → **Save**
+2. Nach ein bis zwei Minuten ist es erreichbar unter
+   `https://DEIN-NAME.github.io/ApkCreator/`
+3. Beim ersten Öffnen einmal ein Zugriffs-Token hinterlegen — die Seite
+   erklärt Schritt für Schritt, wo du es bekommst
+
+Das Token bleibt in deinem Browser und wird nur an `api.github.com`
+gesendet. Wer das nicht möchte, nutzt einfach den klassischen Weg — beide
+führen zum selben Ergebnis.
+
+Ausführlich: **[docs/STUDIO.md](docs/STUDIO.md)**
+
+---
+
+## In 4 Schritten zur eigenen App (klassischer Weg)
 
 ### 1. Repository kopieren
 
