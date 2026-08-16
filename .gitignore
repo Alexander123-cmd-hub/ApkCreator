@@ -1,0 +1,32 @@
+# --- Gradle ---------------------------------------------------------------
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# --- Android --------------------------------------------------------------
+local.properties
+*.apk
+*.aab
+*.ap_
+*.dex
+release/
+captures/
+.cxx/
+
+# --- Signing: darf NIEMALS ins Repository ---------------------------------
+*.jks
+*.keystore
+*.p12
+*.pepk
+keystore.properties
+signing.properties
+
+# --- IDE ------------------------------------------------------------------
+.idea/
+*.iml
+.DS_Store
+
+# --- Sonstiges ------------------------------------------------------------
+*.log
+.kotlin/

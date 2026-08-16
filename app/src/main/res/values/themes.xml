@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Basis-Theme fuer die Activity. Das eigentliche Material-3-Styling passiert
+      in Compose (:core:designsystem); hier wird nur die System-UI konfiguriert.
+    -->
+    <style name="Theme.ApkCreator" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

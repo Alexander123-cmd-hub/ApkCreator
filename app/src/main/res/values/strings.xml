@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ApkCreator</string>
+    <string name="profile_details">Version %1$s &#183; min SDK %2$d</string>
+    <string name="profile_signed">Signiert mit Release-Keystore</string>
+    <string name="profile_unsigned">Debug-Signatur</string>
+</resources>
