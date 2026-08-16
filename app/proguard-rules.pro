@@ -7,32 +7,18 @@
 
 # --- Zeilennummern fuer lesbare Crash-Reports erhalten ---------------------
 # Ohne SourceFile/LineNumberTable sind Stacktraces aus dem Play-Store unbrauchbar.
+# Die zugehoerige mapping.txt sichert der Workflow als Artefakt.
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
 
-# --- Kotlin-Reflection-Metadaten -------------------------------------------
-# Signature/Annotations werden u. a. von kotlinx.serialization und von
-# generischen Typen zur Laufzeit ausgewertet.
--keepattributes Signature,InnerClasses,EnclosingMethod
--keepattributes RuntimeVisibleAnnotations,RuntimeVisibleParameterAnnotations
--keepattributes AnnotationDefault
-
-# --- kotlinx.serialization -------------------------------------------------
-# Reflection-basiert: serializer() wird ueber den Companion aufgeloest.
-# Die Modell-spezifischen Regeln liefert :core:data selbst per consumer-rules.pro;
-# hier stehen nur die bibliotheksweiten Regeln.
--keepclassmembers class kotlinx.serialization.json.** {
-    *** Companion;
+# --- JavaScript-Bruecke ----------------------------------------------------
+# Methoden mit @JavascriptInterface werden ausschliesslich per Reflection aus
+# JavaScript aufgerufen. R8 sieht keinen Aufrufer und wuerde sie entfernen.
+# Die Regel greift nur, falls jemand spaeter addJavascriptInterface() nutzt -
+# ohne sie waere der Fehler zur Laufzeit schwer zu finden.
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
 }
--keepclasseswithmembers class kotlinx.serialization.json.** {
-    kotlinx.serialization.KSerializer serializer(...);
-}
--dontwarn kotlinx.serialization.**
-
-# --- Jetpack Compose -------------------------------------------------------
-# Compose selbst bringt seine Regeln als consumer rules mit; noetig ist nur,
-# dass die Compose-Runtime-Annotationen nicht verloren gehen.
--dontwarn androidx.compose.**
 
 # --- Kotlin-Standardbibliothek --------------------------------------------
 # Intrinsics-Aufrufe fuer Null-Checks entfernen (kleinere und schnellere APK).

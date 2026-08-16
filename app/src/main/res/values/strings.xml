@@ -1,7 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">ApkCreator</string>
-    <string name="profile_details">Version %1$s &#183; min SDK %2$d</string>
-    <string name="profile_signed">Signiert mit Release-Keystore</string>
-    <string name="profile_unsigned">Debug-Signatur</string>
+    <!--
+      Der App-Name steht bewusst NICHT hier: er kommt aus apkcreator.json
+      und wird als Manifest-Platzhalter gesetzt.
+      Die folgenden Texte erscheinen nur, wenn noch keine Web-App
+      hochgeladen wurde.
+    -->
+    <string name="setup_title">Noch keine App hochgeladen</string>
+    <string name="setup_intro">Diese APK wurde gebaut, enthält aber noch keine Inhalte. Es wurde keine Datei „%1$s\" gefunden.</string>
+    <string name="setup_step_label">Schritt %1$d</string>
+    <string name="setup_step_upload">Lade deine Dateien (index.html, CSS, JavaScript, Bilder) in den Ordner „webapp\" deines Repositories hoch.</string>
+    <string name="setup_step_config">Trage Name, Paket-ID und Version in „apkcreator.json\" ein. Für ein eigenes Icon legst du „branding/icon.png\" ab.</string>
+    <string name="setup_step_build">Starte den Workflow „APK bauen\" unter „Actions\" – die fertige APK liegt danach zum Download bereit.</string>
+    <string name="setup_hint">Die Schritt-für-Schritt-Anleitung steht in der README des Repositories.</string>
 </resources>

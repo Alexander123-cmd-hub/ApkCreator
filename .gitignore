@@ -1,16 +1,22 @@
 # --- Gradle ---------------------------------------------------------------
 .gradle/
-build/
+.kotlin/
+
+# Build-Ausgaben werden bewusst modulweise ausgeschlossen und NICHT als
+# allgemeines "build/". Sonst wuerde ein hochgeladener Ordner webapp/build/
+# (das uebliche Ergebnis von "npm run build") stillschweigend ignoriert -
+# der haeufigste denkbare Fehler beim Hochladen einer fertigen Web-App.
+/build/
+/app/build/
+/core/*/build/
+
 !gradle/wrapper/gradle-wrapper.jar
 !gradle/wrapper/gradle-wrapper.properties
 
 # --- Android --------------------------------------------------------------
 local.properties
-*.apk
-*.aab
-*.ap_
-*.dex
-release/
+/app/release/
+/app/debug/
 captures/
 .cxx/
 
@@ -26,7 +32,4 @@ signing.properties
 .idea/
 *.iml
 .DS_Store
-
-# --- Sonstiges ------------------------------------------------------------
-*.log
-.kotlin/
+Thumbs.db
