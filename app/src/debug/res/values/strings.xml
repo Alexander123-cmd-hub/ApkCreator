@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Ueberschreibt app_name nur fuer den Debug-Build. Damit tragen Launcher,
+      App-Info und die Titelzeile in der App denselben abweichenden Namen,
+      ohne dass die Release-Variante beruehrt wird.
+    -->
+    <string name="app_name">ApkCreator Debug</string>
+</resources>
