@@ -33,3 +33,7 @@ signing.properties
 *.iml
 .DS_Store
 Thumbs.db
+
+# --- Werkzeuge fuer die Verifikation ---------------------------------------
+node_modules/
+package-lock.json
