@@ -252,17 +252,36 @@ function clearLog() { $('log').textContent = ''; $('result').textContent = ''; }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------------------------------------------------------- GitHub API
+function repoUrl(path) {
+  const base = `${API}/repos/${state.owner}/${state.repo}`;
+  // Ohne diese Fallunterscheidung entstuende beim Verbinden (path === '')
+  // die Adresse ".../ApkCreator/" mit abschliessendem Schraegstrich. Darauf
+  // antwortet GitHub mit 400 und OHNE CORS-Header - der Browser kann die
+  // Antwort dann nicht lesen und meldet nur das nichtssagende
+  // "Failed to fetch".
+  return path ? `${base}/${path}` : base;
+}
+
 async function api(path, opts = {}) {
-  const res = await fetch(`${API}/repos/${state.owner}/${state.repo}/${path}`, {
-    method: opts.method || 'GET',
-    headers: {
-      'Authorization': `Bearer ${state.token}`,
-      'Accept': 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
-    },
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(repoUrl(path), {
+      method: opts.method || 'GET',
+      headers: {
+        'Authorization': `Bearer ${state.token}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+  } catch (netError) {
+    // fetch wirft nur bei Netzwerk- oder CORS-Problemen, nie bei HTTP-Fehlern.
+    throw new Error(
+      `Keine Verbindung zu api.github.com möglich (${netError.message}). ` +
+      'Prüfe die Internetverbindung; blockiert eventuell ein Werbeblocker oder ein Firmennetz die Anfrage?',
+    );
+  }
   if (!res.ok) {
     let detail = '';
     try { detail = (await res.json()).message || ''; } catch { /* leerer Body */ }
