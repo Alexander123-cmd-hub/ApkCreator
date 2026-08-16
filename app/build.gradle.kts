@@ -1,3 +1,4 @@
+import groovy.json.JsonSlurper
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -6,51 +7,259 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-/**
- * Liest eine Umgebungsvariable und liefert `null`, wenn sie fehlt oder leer ist.
- * Damit unterscheidet sich "nicht gesetzt" nicht von "leer gesetzt" - beides
- * fuehrt zum lokalen Fallback-Verhalten.
- */
+// ===========================================================================
+// 1. Konfiguration einlesen
+//
+// Reihenfolge: Umgebungsvariable (von der CI gesetzt) schlaegt apkcreator.json,
+// und apkcreator.json schlaegt den eingebauten Standardwert. So kann man die
+// Datei bearbeiten ODER beim manuellen Start des Workflows Werte eintippen,
+// ohne dass sich beides in die Quere kommt.
+// ===========================================================================
+
 fun env(name: String): String? = System.getenv(name)?.takeIf(String::isNotBlank)
 
-// --- Signing: alle Werte kommen ausschliesslich aus der Umgebung, nichts steht im Repo. ---
+val configFile = rootProject.file("apkcreator.json")
+
+@Suppress("UNCHECKED_CAST")
+val appConfig: Map<String, Any?> = if (configFile.isFile) {
+    try {
+        JsonSlurper().parse(configFile) as? Map<String, Any?> ?: emptyMap()
+    } catch (error: Exception) {
+        // Kaputtes JSON darf den Build nicht sprengen - es gelten dann die
+        // Standardwerte, und der Hinweis steht gut sichtbar im Log.
+        logger.warn("[apkcreator] apkcreator.json ist fehlerhaft (${error.message}) - Standardwerte werden verwendet.")
+        emptyMap()
+    }
+} else {
+    emptyMap()
+}
+
+fun setting(envName: String, jsonKey: String, fallback: String): String =
+    env(envName) ?: appConfig[jsonKey]?.toString()?.takeIf(String::isNotBlank) ?: fallback
+
+val appName = setting("APP_NAME", "appName", "Meine App")
+val appPackageId = setting("PACKAGE_ID", "packageId", "de.meinefirma.meineapp")
+val appVersionName = setting("VERSION_NAME", "versionName", "1.0.0")
+val appIconBackground = setting("ICON_BACKGROUND_COLOR", "iconBackgroundColor", "#2E6A4F")
+val appOrientation = setting("ORIENTATION", "orientation", "unspecified")
+val openLinksExternally = setting("OPEN_EXTERNAL_LINKS", "openExternalLinksInBrowser", "true").toBoolean()
+
+// Fuehrende und abschliessende Schraegstriche sind ein naheliegender Tippfehler.
+// Sie werden hier entfernt, damit Startseiten-Pruefung und geladene Adresse
+// in der App garantiert denselben Pfad verwenden.
+val appStartUrl = setting("START_URL", "startUrl", "index.html").trim().trim('/')
+
+// ===========================================================================
+// 1a. Eingaben pruefen
+//
+// Ohne diese Pruefung scheitert der Build erst spaet und mit einer Meldung wie
+// "attribute 'package' ... is not a valid Android package name" - fuer jemanden
+// ohne Android-Erfahrung nicht zu deuten. Lieber sofort und im Klartext.
+// ===========================================================================
+
+fun configError(problem: String, solution: String): Nothing {
+    // Jede Zeile einzeln einruecken - sonst steht nur die erste Zeile der
+    // Loesung buendig und der Rest klebt am linken Rand.
+    fun indent(text: String) = text.lines().joinToString("\n") { "  $it" }
+
+    throw GradleException(
+        buildString {
+            appendLine()
+            appendLine("============================================================")
+            appendLine("  Fehler in der Konfiguration (apkcreator.json)")
+            appendLine("============================================================")
+            appendLine(indent(problem))
+            appendLine()
+            appendLine("  So behebst du es:")
+            appendLine(indent(solution))
+            appendLine("============================================================")
+        },
+    )
+}
+
+if (!Regex("^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$").matches(appPackageId)) {
+    configError(
+        problem = "\"packageId\" ist \"$appPackageId\" - das ist keine gueltige Paket-ID.",
+        solution = """
+            Erlaubt sind nur Buchstaben, Ziffern und Unterstriche, getrennt
+            durch mindestens einen Punkt. Jeder Teil muss mit einem Buchstaben
+            beginnen. Keine Leerzeichen, keine Umlaute, keine Bindestriche.
+
+            Gut:     de.meinname.meineapp
+            Schlecht: Meine App   /   de.mein-name.app   /   app
+        """.trimIndent(),
+    )
+}
+
+val appVersionCodeRaw = setting("VERSION_CODE", "versionCode", "1")
+val appVersionCode = appVersionCodeRaw.toIntOrNull()
+    ?: configError(
+        problem = "\"versionCode\" ist \"$appVersionCodeRaw\" - das ist keine ganze Zahl.",
+        solution = "Trage eine Zahl ohne Anfuehrungszeichen ein, z. B. 1. Bei jedem Update erhoehen.",
+    )
+if (appVersionCode < 1) {
+    configError(
+        problem = "\"versionCode\" ist $appVersionCode - der Wert muss mindestens 1 sein.",
+        solution = "Trage 1 ein und erhoehe die Zahl bei jedem Update.",
+    )
+}
+
+if (!Regex("^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})\$").matches(appIconBackground)) {
+    configError(
+        problem = "\"iconBackgroundColor\" ist \"$appIconBackground\" - das ist keine gueltige Farbe.",
+        solution = "Erwartet wird ein Hex-Wert mit Raute, z. B. #2E6A4F. Farbwaehler: https://htmlcolorcodes.com",
+    )
+}
+
+val allowedOrientations = setOf("unspecified", "portrait", "landscape", "sensorPortrait", "sensorLandscape", "fullSensor")
+if (appOrientation !in allowedOrientations) {
+    configError(
+        problem = "\"orientation\" ist \"$appOrientation\" - dieser Wert ist nicht erlaubt.",
+        solution = "Moeglich sind: ${allowedOrientations.joinToString(", ")}",
+    )
+}
+
+if (appStartUrl.isEmpty()) {
+    configError(
+        problem = "\"startUrl\" ist leer.",
+        solution = "Trage die Startseite ein, ueblicherweise index.html.",
+    )
+}
+
+// Der Ordner, in den Nutzer ihre Web-App legen. Existiert er nicht, startet die
+// App mit einem Hinweisbildschirm statt zu crashen.
+val webAppDir = rootProject.file("webapp")
+val customIconFile = rootProject.file("branding/icon.png")
+
+// ===========================================================================
+// 2. Signing (unveraendert): alle Werte kommen aus der Umgebung, nichts im Repo.
+// ===========================================================================
+
 val keystoreFile = env("KEYSTORE_PATH")?.let(::file)?.takeIf(File::isFile)
 val keystorePasswordEnv = env("KEYSTORE_PASSWORD")
 val keyAliasEnv = env("KEY_ALIAS")
 val keyPasswordEnv = env("KEY_PASSWORD")
 
-// Nur wenn wirklich alle vier Angaben vorliegen, wird echtes Release-Signing aktiviert.
-// Fehlt auch nur eine, faellt der Release-Build auf die Debug-Signatur zurueck,
-// statt den Build abzubrechen - so bleibt ein lokales `assembleRelease` moeglich.
 val hasReleaseSigning =
     keystoreFile != null &&
         keystorePasswordEnv != null &&
         keyAliasEnv != null &&
         keyPasswordEnv != null
 
-// versionCode/versionName lassen sich per Umgebungsvariable ueberschreiben,
-// damit die CI z. B. die Run-Number oder den Tag-Namen einsetzen kann.
-// Ohne Variable gelten die hier definierten Werte.
-val defaultVersionCode = 1
-val defaultVersionName = "1.0.0"
+// ===========================================================================
+// 3. Branding: Launcher-Icon aus branding/icon.png erzeugen
+//
+// Die Icon-Ressourcen werden immer generiert - so gibt es genau eine Quelle
+// und keine Konflikte mit Dateien unter src/main/res.
+// ===========================================================================
+
+val brandingResDir = layout.buildDirectory.dir("generated/branding/res")
+
+val generateBranding by tasks.registering {
+    description = "Erzeugt Launcher-Icon-Ressourcen aus branding/icon.png."
+
+    // Damit Gradle weiss, wann die Aufgabe erneut laufen muss.
+    // files() statt file(): beide Dateien sind optional, und eine fehlende
+    // Datei darf die Eingabepruefung nicht scheitern lassen.
+    inputs.files(project.files(configFile, customIconFile))
+        .withPropertyName("brandingSources")
+    inputs.property("iconBackground", appIconBackground)
+    outputs.dir(brandingResDir)
+
+    doLast {
+        val resDir = brandingResDir.get().asFile
+        resDir.deleteRecursively()
+
+        val hasCustomIcon = customIconFile.isFile
+        val foreground = if (hasCustomIcon) "@drawable/branding_foreground" else "@drawable/ic_launcher_default"
+
+        // Hintergrundfarbe des adaptiven Icons.
+        resDir.resolve("values").mkdirs()
+        resDir.resolve("values/branding.xml").writeText(
+            """
+            <?xml version="1.0" encoding="utf-8"?>
+            <resources>
+                <color name="ic_launcher_background">$appIconBackground</color>
+            </resources>
+            """.trimIndent() + "\n",
+        )
+
+        if (hasCustomIcon) {
+            // Das Nutzer-PNG wird als Bitmap-Ressource abgelegt und fuer das
+            // adaptive Icon eingerueckt: Android beschneidet die aeusseren ~25 %
+            // je nach Geraeteform, der Inset haelt das Motiv in der sicheren Zone.
+            resDir.resolve("drawable-nodpi").mkdirs()
+            customIconFile.copyTo(resDir.resolve("drawable-nodpi/branding_icon.png"), overwrite = true)
+
+            resDir.resolve("drawable").mkdirs()
+            resDir.resolve("drawable/branding_foreground.xml").writeText(
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <inset xmlns:android="http://schemas.android.com/apk/res/android"
+                    android:drawable="@drawable/branding_icon"
+                    android:inset="17%" />
+                """.trimIndent() + "\n",
+            )
+        }
+
+        resDir.resolve("mipmap-anydpi-v26").mkdirs()
+        listOf("ic_launcher", "ic_launcher_round").forEach { name ->
+            resDir.resolve("mipmap-anydpi-v26/$name.xml").writeText(
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+                    <background android:drawable="@color/ic_launcher_background" />
+                    <foreground android:drawable="$foreground" />
+                    <monochrome android:drawable="$foreground" />
+                </adaptive-icon>
+                """.trimIndent() + "\n",
+            )
+        }
+
+        logger.lifecycle(
+            if (hasCustomIcon) {
+                "[apkcreator] Launcher-Icon aus branding/icon.png erzeugt."
+            } else {
+                "[apkcreator] Kein branding/icon.png gefunden - Standard-Icon wird verwendet."
+            },
+        )
+    }
+}
 
 android {
     namespace = "de.roboticmind.apkcreator"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "de.roboticmind.apkcreator"
+        applicationId = appPackageId
         minSdk = 26
         targetSdk = 35
 
-        versionCode = env("VERSION_CODE")?.toIntOrNull() ?: defaultVersionCode
-        versionName = env("VERSION_NAME") ?: defaultVersionName
+        versionCode = appVersionCode
+        versionName = appVersionName
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Werte, die die App zur Laufzeit braucht.
+        buildConfigField("String", "START_URL", "\"$appStartUrl\"")
+        buildConfigField("boolean", "OPEN_EXTERNAL_LINKS", "$openLinksExternally")
+
+        // Der App-Name und die Bildschirmausrichtung landen ueber Platzhalter
+        // im Manifest.
+        manifestPlaceholders["appLabel"] = appName
+        manifestPlaceholders["screenOrientation"] = appOrientation
+    }
+
+    sourceSets {
+        getByName("main") {
+            // Die hochgeladene Web-App wird direkt als Asset eingebunden -
+            // kein Kopierschritt, kein Zwischenordner im Repository.
+            if (webAppDir.isDirectory) {
+                assets.srcDir(webAppDir)
+            }
+            res.srcDir(brandingResDir)
+        }
     }
 
     signingConfigs {
-        // Der Block wird nur angelegt, wenn die Zugangsdaten vorhanden sind.
         if (hasReleaseSigning) {
             create("release") {
                 storeFile = keystoreFile
@@ -66,12 +275,10 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
             isMinifyEnabled = false
-            // Der abweichende App-Name der Debug-Variante kommt aus
-            // src/debug/res/values/strings.xml und ueberschreibt dort app_name.
+            manifestPlaceholders["appLabel"] = "$appName Debug"
         }
 
         release {
-            // R8: Code schrumpfen/obfuskieren und ungenutzte Ressourcen entfernen.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -81,8 +288,8 @@ android {
             signingConfig = if (hasReleaseSigning) {
                 signingConfigs.getByName("release")
             } else {
-                // Bewusster Fallback: die APK ist dann NICHT verteilbar,
-                // laesst sich aber lokal bauen und installieren.
+                // Bewusster Fallback: die APK laesst sich installieren, ist aber
+                // nicht fuer den Play Store geeignet. Der Build bricht nicht ab.
                 signingConfigs.getByName("debug")
             }
         }
@@ -95,13 +302,18 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+
+    androidResources {
+        // Die Anleitung im Ordner webapp/ richtet sich an Menschen auf GitHub
+        // und hat in der fertigen APK nichts verloren.
+        ignoreAssetsPatterns += "README.md"
     }
 
     lint {
-        // Warnungen sollen den Build nicht abbrechen, echte Fehler schon.
         warningsAsErrors = false
         abortOnError = true
-        // Reports landen als Artefakt in der CI.
         htmlReport = true
         xmlReport = true
     }
@@ -119,12 +331,36 @@ kotlin {
     }
 }
 
-// Sichtbarer Hinweis im Build-Log, ohne irgendeinen Geheimniswert auszugeben.
-if (!hasReleaseSigning) {
+// Die generierten Icon-Ressourcen muessen bereitstehen, bevor irgendein
+// Variantentask sie liest. preBuild haengt jedem Variantenbau voran - damit
+// ist die Reihenfolge fuer alle Konsumenten (Ressourcen zusammenfuehren,
+// Pfade aufloesen, Lint) auf einen Schlag korrekt.
+tasks.named("preBuild") {
+    dependsOn(generateBranding)
+}
+
+// Uebersicht im Build-Log - hilft beim Nachvollziehen, was gebaut wurde.
+// Es werden ausschliesslich unkritische Werte ausgegeben, keine Secrets.
+gradle.projectsEvaluated {
+    val webAppFiles = if (webAppDir.isDirectory) {
+        webAppDir.walkTopDown().count { it.isFile }
+    } else {
+        0
+    }
     logger.lifecycle(
-        "[signing] Keine vollstaendigen Release-Keystore-Variablen gefunden - " +
-            "Release-Build wird mit der Debug-Signatur signiert.",
+        """
+        [apkcreator] App-Name:   $appName
+        [apkcreator] Paket-ID:   $appPackageId
+        [apkcreator] Version:    $appVersionName ($appVersionCode)
+        [apkcreator] Startseite: $appStartUrl
+        [apkcreator] Dateien in webapp/: $webAppFiles
+        """.trimIndent(),
     )
+    if (!hasReleaseSigning) {
+        logger.lifecycle(
+            "[apkcreator] Kein Release-Keystore gesetzt - Release-Builds werden mit der Debug-Signatur signiert.",
+        )
+    }
 }
 
 dependencies {
@@ -133,8 +369,8 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.webkit)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

@@ -1,8 +1,20 @@
-# CI/CD – automatische APK-Builds
+# Signierte Releases einrichten
 
-Dieses Dokument beschreibt die Pipeline in `.github/workflows/build-apk.yml`:
-welche Secrets nötig sind, wie ein Release ausgelöst wird und was bei den
-typischen Fehlern zu tun ist.
+Die normale Debug-APK entsteht **ohne jede Einrichtung** — einfach Dateien
+hochladen, fertig. Dieses Dokument brauchst du nur, wenn du zusätzlich
+signierte Release-APKs willst.
+
+**Wozu der Aufwand?**
+
+| | Debug | Release |
+| --- | --- | --- |
+| Größe | ~9 MB | ~0,8 MB |
+| Weitergabe an andere | möglich, aber unsauber | dafür gemacht |
+| Play Store | nein | ja |
+| Updates ohne Deinstallieren | nur bei gleicher Debug-Signatur | ja |
+
+Der Kern ist ein **Signaturschlüssel** (Keystore). Er beweist, dass ein Update
+wirklich von dir stammt. Einmal erzeugt, gilt er für alle künftigen Versionen.
 
 ---
 
@@ -10,56 +22,54 @@ typischen Fehlern zu tun ist.
 
 | Auslöser | Job | Ergebnis |
 | --- | --- | --- |
-| `push` auf `main` | `debug` | Debug-APK als Artefakt (30 Tage) |
-| `pull_request` auf `main` | `debug` | Lint + Unit-Tests + Debug-APK + Reports |
-| `push` eines Tags `v*` | `release` | Signierte Release-APK + GitHub Release |
-| manuell (`workflow_dispatch`) | `debug` | Debug-APK als Artefakt |
+| `push` auf `main` | `build` | Debug-APK als Artefakt (30 Tage) |
+| `pull_request` auf `main` | `build` | Lint + Unit-Tests + Debug-APK + Reports |
+| manueller Start | `build` | Debug **oder** Release, mit eingetippten Angaben |
+| `push` eines Tags `v*` | `release` | Signierte APK + GitHub Release |
 
-Lint- und Testfehler brechen den Pull-Request-Build ab. Auf `main` und bei
-manuellen Läufen wird nur gebaut – dort ist die Prüfung bereits im PR erfolgt.
+Lint- und Testfehler brechen den Pull-Request-Build ab. Auf `main` wird nur
+gebaut — dort ist die Prüfung bereits im PR erfolgt.
 
 ---
 
-## 2. Benötigte GitHub Secrets
+## 2. Die vier Secrets
 
-Anzulegen unter **Settings → Secrets and variables → Actions → New repository secret**.
-Die Namen müssen exakt so lauten:
+Anzulegen unter **Settings → Secrets and variables → Actions → New repository
+secret**. Die Namen müssen exakt so lauten:
 
 | Secret | Inhalt |
 | --- | --- |
-| `KEYSTORE_BASE64` | Der komplette Keystore (`.jks`), Base64-kodiert, **ohne Zeilenumbrüche** |
+| `KEYSTORE_BASE64` | Der Keystore (`.jks`), Base64-kodiert, **ohne Zeilenumbrüche** |
 | `KEYSTORE_PASSWORD` | Passwort des Keystores (`-storepass`) |
-| `KEY_ALIAS` | Alias des Schlüssels im Keystore (z. B. `upload`) |
+| `KEY_ALIAS` | Alias des Schlüssels, z. B. `upload` |
 | `KEY_PASSWORD` | Passwort des Schlüssels (`-keypass`) |
 
-Nur der Job `release` liest diese Secrets. Der Debug-Build kommt ohne aus.
+Nur der Release-Job liest sie. Debug-Builds kommen ohne aus.
 
-> **Wichtig:** Sichere den Keystore zusätzlich an einem sicheren Ort
-> (Passwort-Manager, verschlüsseltes Backup). Geht er verloren, kannst du
-> bestehende Installationen nie wieder aktualisieren – ein neuer Keystore
-> bedeutet eine neue App-Identität.
+> **Sichere den Keystore zusätzlich** an einem sicheren Ort (Passwort-Manager,
+> verschlüsseltes Backup). Geht er verloren, kannst du bestehende
+> Installationen nie wieder aktualisieren — ein neuer Keystore bedeutet für
+> Android eine neue App-Identität.
 
 ---
 
-## 3. Keystore erzeugen und nach Base64 konvertieren
+## 3. Keystore erzeugen und kodieren
 
 ### Linux / macOS
 
 ```bash
-# 1. Keystore erzeugen (fragt interaktiv nach Passwörtern und Namensangaben)
+# 1. Keystore erzeugen (fragt nach Passwörtern und Namensangaben)
 keytool -genkeypair -v \
   -keystore release.jks \
   -keyalg RSA -keysize 2048 -validity 10000 \
   -alias upload
 
-# 2. Nach Base64 konvertieren (-w0 = keine Zeilenumbrüche, wichtig!)
+# 2. Nach Base64 (-w0 = keine Zeilenumbrüche, wichtig!)
 base64 -w0 release.jks > release.jks.base64
 
-# 3. Inhalt in die Zwischenablage (Linux, benötigt xclip)
-xclip -selection clipboard < release.jks.base64
-
-# 3b. Alternative für macOS
-pbcopy < release.jks.base64
+# 3. In die Zwischenablage
+xclip -selection clipboard < release.jks.base64   # Linux
+pbcopy < release.jks.base64                       # macOS
 ```
 
 Auf macOS kennt `base64` kein `-w0`; dort erzeugt der Standardaufruf bereits
@@ -78,47 +88,65 @@ keytool -genkeypair -v `
   -keyalg RSA -keysize 2048 -validity 10000 `
   -alias upload
 
-# 2. Nach Base64 konvertieren (einzeilig)
+# 2. Nach Base64 (einzeilig)
 [Convert]::ToBase64String([IO.File]::ReadAllBytes("release.jks")) |
   Set-Content -NoNewline release.jks.base64
 
-# 3. Inhalt in die Zwischenablage
+# 3. In die Zwischenablage
 Get-Content -Raw release.jks.base64 | Set-Clipboard
 ```
 
-Danach den Inhalt von `release.jks.base64` als Wert für `KEYSTORE_BASE64`
-einfügen und die lokalen Dateien `release.jks.base64` **löschen**.
-Der Keystore selbst gehört nicht ins Repository – `.gitignore` blockt
-`*.jks`, `*.keystore` und `*.p12` bereits.
+### Mit installierter GitHub CLI
+
+```bash
+gh secret set KEYSTORE_BASE64 < release.jks.base64
+gh secret set KEY_ALIAS --body 'upload'
+gh secret set KEYSTORE_PASSWORD   # fragt interaktiv, bleibt aus der History
+gh secret set KEY_PASSWORD
+```
+
+Danach `release.jks.base64` löschen. Der Keystore selbst gehört **nicht** ins
+Repository — `.gitignore` blockt `*.jks`, `*.keystore` und `*.p12` bereits.
 
 ---
 
 ## 4. Release auslösen
 
+### Über die Weboberfläche (auch am Handy)
+
+1. **Releases** → **Draft a new release**
+2. *Choose a tag* → `v1.0.0` eintippen → **Create new tag: v1.0.0 on publish**
+
+   Nur die Version eintippen — der Text „on publish" gehört zum Button, nicht
+   in das Feld. Erlaubt sind Buchstaben, Ziffern und `.` `-` `_`, keine
+   Leerzeichen.
+3. **Publish release**
+
+### Über die Kommandozeile
+
 ```bash
-# Tag setzen und pushen – das startet den Release-Job
 git tag v1.0.0
 git push origin v1.0.0
 ```
 
-Was dann passiert:
+### Was dann passiert
 
-1. Der Keystore wird aus `KEYSTORE_BASE64` nach `$RUNNER_TEMP/release.jks`
-   entschlüsselt (außerhalb des Workspace).
+1. Keystore wird aus `KEYSTORE_BASE64` nach `$RUNNER_TEMP/release.jks`
+   entschlüsselt — außerhalb des Workspace.
 2. `versionName` wird aus dem Tag abgeleitet: `v1.0.0` → `1.0.0`.
 3. `versionCode` wird auf die Lauf-Nummer des Workflows gesetzt.
-4. `./gradlew assembleRelease` baut mit R8-Shrinking und signiert.
-5. Ein Prüfschritt bricht ab, falls die APK versehentlich mit dem
-   Debug-Zertifikat signiert wurde.
-6. APK und R8-`mapping.txt` werden als Artefakte hochgeladen.
-7. Ein GitHub Release wird angelegt, die APK angehängt, die Release Notes
-   aus den Commits seit dem vorherigen Tag erzeugt.
-8. Der Keystore wird vom Runner gelöscht – auch wenn der Build fehlschlägt.
+4. Gradle baut mit R8-Shrinking und signiert.
+5. Ein Prüfschritt bricht ab, falls die APK versehentlich das Debug-Zertifikat
+   trägt.
+6. APK und `mapping.txt` werden als Artefakte gesichert.
+7. Das GitHub Release wird angelegt, die APK angehängt, die Release Notes
+   entstehen aus den Commits seit dem vorherigen Tag.
+8. Der Keystore wird gelöscht — auch wenn der Build fehlschlägt.
 
-**Vorabversionen:** Enthält der Tag einen Bindestrich (z. B. `v1.1.0-rc1`),
-wird das Release automatisch als *Pre-release* markiert.
+**Vorabversionen:** Enthält der Tag einen Bindestrich (`v1.1.0-rc1`), wird das
+Release automatisch als *Pre-release* markiert.
 
-**Tag zurücknehmen** (falls etwas schiefging):
+**Tag zurücknehmen:**
 
 ```bash
 git tag -d v1.0.0
@@ -131,14 +159,14 @@ Das zugehörige GitHub Release muss zusätzlich manuell gelöscht werden.
 
 ## 5. Lokal testen, ohne zu pushen
 
-Der Release-Build lässt sich vollständig lokal nachstellen. Ohne gesetzte
-Variablen fällt er bewusst auf die Debug-Signatur zurück und bricht **nicht** ab:
+Ohne gesetzte Variablen fällt der Release-Build bewusst auf die Debug-Signatur
+zurück und bricht **nicht** ab:
 
 ```bash
 # Variante A: ohne Keystore – prüft nur, ob R8/Shrinking durchläuft
 ./gradlew assembleRelease
 # Erwartete Log-Zeile:
-# [signing] Keine vollstaendigen Release-Keystore-Variablen gefunden - ...
+# [apkcreator] Kein Release-Keystore gesetzt - ...
 ```
 
 ```bash
@@ -147,8 +175,6 @@ export KEYSTORE_PATH="$HOME/keys/release.jks"   # absoluter Pfad
 export KEYSTORE_PASSWORD="…"
 export KEY_ALIAS="upload"
 export KEY_PASSWORD="…"
-export VERSION_CODE="42"        # optional, überschreibt build.gradle.kts
-export VERSION_NAME="1.0.0"     # optional
 
 ./gradlew assembleRelease
 ```
@@ -156,13 +182,13 @@ export VERSION_NAME="1.0.0"     # optional
 Ergebnis prüfen:
 
 ```bash
-# Signatur anzeigen – hier darf NICHT "CN=Android Debug" stehen
+# Signatur – hier darf NICHT "CN=Android Debug" stehen
 "$ANDROID_HOME"/build-tools/35.0.0/apksigner verify --print-certs \
   app/build/outputs/apk/release/app-release.apk
 
-# versionCode / versionName aus der fertigen APK auslesen
+# Name, Paket-ID und Version aus der fertigen APK
 "$ANDROID_HOME"/build-tools/35.0.0/aapt2 dump badging \
-  app/build/outputs/apk/release/app-release.apk | head -1
+  app/build/outputs/apk/release/app-release.apk | grep -E "^package|application-label"
 ```
 
 Das Gegenstück zum PR-Job:
@@ -177,107 +203,84 @@ Das Gegenstück zum PR-Job:
 
 ### `gradle-wrapper.jar` fehlt
 
-**Symptom:**
-`Error: Could not find or load main class org.gradle.wrapper.GradleWrapperMain`
+**Symptom:** `Could not find or load main class org.gradle.wrapper.GradleWrapperMain`
 
-**Ursache:** Die Datei `gradle/wrapper/gradle-wrapper.jar` ist nicht im
-Repository – meist, weil eine `.gitignore`-Regel wie `*.jar` sie ausschließt.
-
-**Prüfen:**
+**Ursache:** `gradle/wrapper/gradle-wrapper.jar` fehlt im Repository — meist,
+weil eine `.gitignore`-Regel wie `*.jar` sie ausschließt.
 
 ```bash
-git ls-files gradle/wrapper/
-# Muss gradle-wrapper.jar UND gradle-wrapper.properties zeigen
-git check-ignore -v gradle/wrapper/gradle-wrapper.jar
-# Gibt nichts aus, wenn die Datei korrekt nicht ignoriert wird
-```
-
-**Beheben:**
-
-```bash
+git ls-files gradle/wrapper/     # muss BEIDE Dateien zeigen
 gradle wrapper --gradle-version 8.11.1 --distribution-type bin
 git add -f gradle/wrapper/gradle-wrapper.jar
 ```
 
-Die `.gitignore` dieses Projekts enthält dafür bereits eine
-Ausnahme-Regel (`!gradle/wrapper/gradle-wrapper.jar`).
+Die `.gitignore` dieses Projekts enthält dafür bereits eine Ausnahme
+(`!gradle/wrapper/gradle-wrapper.jar`).
 
 ---
 
 ### Falsche JDK-Version
 
-**Symptom:**
-`Unsupported class file major version 6x` oder
-`Android Gradle plugin requires Java 17 to run. You are currently using Java 11.`
+**Symptom:** `Unsupported class file major version 6x` oder
+`Android Gradle plugin requires Java 17 to run.`
 
 **Ursache:** AGP 8.7.3 verlangt JDK 17; die Module kompilieren mit
 `jvmTarget = 17`.
 
-**Beheben:** Im Workflow steht die Version zentral in `env.JAVA_VERSION`.
-Lokal:
+Im Workflow steht die Version zentral in `env.JAVA_VERSION`. Lokal:
 
 ```bash
-java -version          # muss 17 (oder neuer) melden
+java -version          # muss 17 oder neuer melden
 export JAVA_HOME=/pfad/zu/jdk-17
 ```
 
-JDK 21 funktioniert lokal ebenfalls, weil `sourceCompatibility`/`jvmTarget`
-explizit auf 17 stehen. Der Runner nutzt bewusst 17, um exakt der von AGP
-unterstützten Kombination zu entsprechen.
+JDK 21 funktioniert lokal ebenfalls, weil `sourceCompatibility` und
+`jvmTarget` explizit auf 17 stehen.
 
 ---
 
 ### Keystore-Passwort passt nicht
 
-**Symptom:**
-`Failed to read key upload from store … keystore password was incorrect`
-oder `Cannot recover key`
-
-**Ursachen und Prüfung:**
+**Symptom:** `keystore password was incorrect` oder `Cannot recover key`
 
 1. **Store- und Key-Passwort verwechselt.** `KEYSTORE_PASSWORD` ist
-   `-storepass`, `KEY_PASSWORD` ist `-keypass`. Bei `keytool` sind das zwei
-   verschiedene Werte, auch wenn sie oft identisch gesetzt werden.
+   `-storepass`, `KEY_PASSWORD` ist `-keypass` — bei `keytool` zwei
+   verschiedene Werte, auch wenn sie oft gleich gesetzt werden.
 2. **Alias falsch.** Vorhandene Aliase auflisten:
 
    ```bash
    keytool -list -v -keystore release.jks | grep "Alias name"
    ```
 
-3. **Zeilenumbrüche im Base64-Secret.** Wurde `base64` ohne `-w0` benutzt,
-   enthält das Secret Umbrüche und die dekodierte Datei ist beschädigt.
-   Lokal gegenprüfen:
+3. **Zeilenumbrüche im Base64-Secret.** Ohne `-w0` enthält das Secret Umbrüche
+   und die dekodierte Datei ist beschädigt:
 
    ```bash
-   base64 -w0 release.jks | md5sum      # mit dem Secret-Inhalt vergleichen
+   base64 -w0 release.jks | md5sum   # mit dem Secret-Inhalt vergleichen
    ```
 
-4. **Leerzeichen beim Einfügen.** Beim Kopieren in das GitHub-Secret-Feld
-   darf kein führendes/abschließendes Whitespace mitkommen.
+4. **Leerzeichen beim Einfügen** ins Secret-Feld — führendes oder
+   abschließendes Whitespace zerstört den Wert.
 
-Der Workflow-Schritt „Signatur prüfen" fängt den Fall ab, dass der Build
-trotz gesetzter Secrets still auf die Debug-Signatur zurückfällt.
+Der Schritt „Signatur prüfen" fängt den Fall ab, dass der Build trotz gesetzter
+Secrets still auf die Debug-Signatur zurückfällt.
 
 ---
 
-### Out of Memory beim Gradle-Build auf dem Runner
+### Out of Memory auf dem Runner
 
-**Symptom:**
-`Java heap space`, `GC overhead limit exceeded`, oder der Runner beendet den
-Job mit `The runner has received a shutdown signal` / Exit-Code 137.
+**Symptom:** `Java heap space`, `GC overhead limit exceeded`, oder Exit-Code
+137 / `The runner has received a shutdown signal`.
 
-**Ursache:** Gradle-Daemon und Kotlin-Compiler teilen sich den Speicher des
-Runners (ubuntu-latest: 16 GB RAM, 4 vCPU).
-
-**Aktuelle Einstellung** in `gradle.properties`:
+Aktuelle Einstellung in `gradle.properties`:
 
 ```properties
 org.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8
 ```
 
-**Wenn es trotzdem klemmt, in dieser Reihenfolge:**
+Wenn es klemmt, in dieser Reihenfolge:
 
-1. Heap erhöhen – auf GitHub-Runnern sind 4–5 GB gefahrlos möglich:
+1. Heap erhöhen (auf GitHub-Runnern sind 4–5 GB gefahrlos möglich):
 
    ```properties
    org.gradle.jvmargs=-Xmx5g -XX:MaxMetaspaceSize=1g
@@ -289,20 +292,12 @@ org.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryErro
    kotlin.daemon.jvmargs=-Xmx2g
    ```
 
-3. Parallelität reduzieren, wenn mehrere Module gleichzeitig kompilieren:
+3. Parallelität reduzieren: `org.gradle.parallel=false`
+4. Als letzte Stufe: `./gradlew assembleRelease --no-daemon`
 
-   ```properties
-   org.gradle.parallel=false
-   ```
-
-4. Als letzte Stufe den Daemon im CI-Lauf abschalten:
-
-   ```bash
-   ./gradlew assembleRelease --no-daemon
-   ```
-
-Faustregel: `-Xmx` plus `kotlin.daemon.jvmargs` sollten zusammen deutlich
-unter dem RAM des Runners bleiben, sonst greift der OOM-Killer (Exit 137).
+Faustregel: `-Xmx` plus `kotlin.daemon.jvmargs` sollten zusammen deutlich unter
+dem RAM des Runners bleiben (ubuntu-latest: 16 GB), sonst greift der
+OOM-Killer.
 
 ---
 
@@ -310,7 +305,9 @@ unter dem RAM des Runners bleiben, sonst greift der OOM-Killer (Exit 137).
 
 | Symptom | Ursache | Lösung |
 | --- | --- | --- |
-| `SDK location not found` | `local.properties` fehlt lokal | `sdk.dir=/pfad/zum/android-sdk` eintragen (Datei ist gitignored; auf dem Runner nicht nötig, dort greift `ANDROID_HOME`) |
+| `SDK location not found` | `local.properties` fehlt lokal | `sdk.dir=/pfad/zum/android-sdk` eintragen (gitignored; auf dem Runner nicht nötig) |
 | `Artifact name is not valid` | Branchname enthält `/` | Der Workflow ersetzt `/` bereits durch `-` |
-| `Resource not accessible by integration` beim Release | Job hat keine Schreibrechte | `permissions: contents: write` im Job `release` prüfen |
-| `SerializationException` nur im Release-Build | R8 hat Serializer entfernt | keep-Regeln in `core/data/consumer-rules.pro` prüfen |
+| `Resource not accessible by integration` | Job ohne Schreibrechte | `permissions: contents: write` im Job `release` prüfen |
+| App zeigt Hinweisbildschirm | `webapp/index.html` fehlt | Datei hochladen, Kleinschreibung beachten |
+| Weiße Seite in der App | absolute Pfade wie `/app.js` | auf relative Pfade umstellen |
+| `apkcreator.json` wirkt nicht | JSON-Syntaxfehler | Build-Log zeigt `[apkcreator] apkcreator.json ist fehlerhaft`; Kommas und Anführungszeichen prüfen |

@@ -1,12 +1,14 @@
 # ---------------------------------------------------------------------------
-# CI/CD-Pipeline fuer ApkCreator
+# APK bauen
 #
-#   push auf main        -> Debug-APK als Artefakt
+#   push auf main         -> Debug-APK (installierbar, zum Ausprobieren)
 #   pull_request auf main -> Lint + Unit-Tests + Debug-APK
-#   push eines Tags v*   -> signierte Release-APK + GitHub Release
-#   workflow_dispatch    -> manueller Debug-Build
+#   push eines Tags v*    -> signierte Release-APK + GitHub Release
+#   manueller Start       -> APK mit selbst eingetippten Angaben
+#
+# Ohne eingetragene Angaben gelten die Werte aus apkcreator.json.
 # ---------------------------------------------------------------------------
-name: Build APK
+name: APK bauen
 
 on:
   push:
@@ -15,6 +17,27 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      app_name:
+        description: "Name der App (leer = Wert aus apkcreator.json)"
+        required: false
+        type: string
+      package_id:
+        description: "Paket-ID, z. B. de.meinefirma.meineapp (leer = apkcreator.json)"
+        required: false
+        type: string
+      version_name:
+        description: "Version, z. B. 1.0.0 (leer = apkcreator.json)"
+        required: false
+        type: string
+      build_type:
+        description: "Welche Variante gebaut werden soll"
+        required: true
+        default: debug
+        type: choice
+        options:
+          - debug
+          - release
 
 # Standardmaessig nur Lesezugriff. Schreibrechte bekommt ausschliesslich
 # der Release-Job, und zwar nur auf "contents" (fuer das Anlegen des Releases).
@@ -31,14 +54,19 @@ concurrency:
 env:
   # AGP 8.7.3 setzt JDK 17 voraus, und das jvmTarget der Module ist ebenfalls 17.
   JAVA_VERSION: "17"
+  # Ohne UTF-8-Locale liest die JVM Umgebungsvariablen als ASCII - ein
+  # App-Name wie "Grüße", der beim manuellen Start eingetippt wird, kaeme
+  # dann verstuemmelt in der APK an.
+  LANG: C.UTF-8
+  LC_ALL: C.UTF-8
 
 jobs:
   # =========================================================================
-  # DEBUG-BUILD: laeuft bei push auf main, bei jedem PR und bei manuellem Start.
+  # APK BAUEN: laeuft bei Push, Pull Request und manuellem Start.
   # Bei Tags wird dieser Job uebersprungen - dort greift der Release-Job.
   # =========================================================================
-  debug:
-    name: Debug-APK
+  build:
+    name: APK bauen
     if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -46,8 +74,6 @@ jobs:
       contents: read
 
     steps:
-      # fetch-depth: 0 laedt die komplette Historie - noetig, damit spaetere
-      # Schritte (und der Release-Job) Commits vergleichen koennen.
       - name: Repository auschecken
         uses: actions/checkout@v4
         with:
@@ -76,8 +102,6 @@ jobs:
         if: github.event_name == 'pull_request'
         run: ./gradlew testDebugUnitTest --stacktrace
 
-      # Test- und Lint-Reports auch dann hochladen, wenn der Schritt davor
-      # fehlgeschlagen ist - sonst muss man im Log suchen.
       - name: Test- und Lint-Reports sichern
         if: ${{ always() && github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v4
@@ -89,32 +113,78 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
-      - name: Debug-APK bauen
-        run: ./gradlew assembleDebug --stacktrace
+      # Beim manuellen Start entscheidet die Auswahl, sonst wird Debug gebaut.
+      - name: Zu bauende Variante bestimmen
+        id: variant
+        run: |
+          set -euo pipefail
+          BUILD_TYPE="${{ github.event.inputs.build_type || 'debug' }}"
+          echo "type=${BUILD_TYPE}" >> "$GITHUB_OUTPUT"
+          if [ "${BUILD_TYPE}" = "release" ]; then
+            echo "task=assembleRelease" >> "$GITHUB_OUTPUT"
+            echo "dir=release" >> "$GITHUB_OUTPUT"
+          else
+            echo "task=assembleDebug" >> "$GITHUB_OUTPUT"
+            echo "dir=debug" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Der Keystore wird nur entschluesselt, wenn eine Release-Variante
+      # gewuenscht ist UND das Secret existiert. Fehlt es, baut Gradle bewusst
+      # mit der Debug-Signatur weiter, statt abzubrechen.
+      - name: Keystore bereitstellen (nur Release)
+        id: keystore
+        if: steps.variant.outputs.type == 'release'
         env:
-          # Fortlaufender versionCode aus der Lauf-Nummer, damit sich zwei
-          # Debug-Builds auf einem Geraet nicht gegenseitig blockieren.
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::warning::Kein KEYSTORE_BASE64 hinterlegt - die APK wird mit der Debug-Signatur gebaut."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          printf '%s' "${KEYSTORE_BASE64}" | base64 --decode > "${RUNNER_TEMP}/release.jks"
+          chmod 600 "${RUNNER_TEMP}/release.jks"
+          echo "available=true" >> "$GITHUB_OUTPUT"
+          echo "Keystore geschrieben ($(stat -c%s "${RUNNER_TEMP}/release.jks") Bytes)."
+
+      - name: APK bauen
+        env:
+          # Leere Werte werden von Gradle ignoriert - dann gilt apkcreator.json.
+          APP_NAME: ${{ github.event.inputs.app_name }}
+          PACKAGE_ID: ${{ github.event.inputs.package_id }}
+          VERSION_NAME: ${{ github.event.inputs.version_name }}
+          # Fortlaufender versionCode, damit sich zwei Builds auf einem Geraet
+          # nicht gegenseitig blockieren.
           VERSION_CODE: ${{ github.run_number }}
+          KEYSTORE_PATH: ${{ steps.keystore.outputs.available == 'true' && format('{0}/release.jks', runner.temp) || '' }}
+          KEYSTORE_PASSWORD: ${{ steps.keystore.outputs.available == 'true' && secrets.KEYSTORE_PASSWORD || '' }}
+          KEY_ALIAS: ${{ steps.keystore.outputs.available == 'true' && secrets.KEY_ALIAS || '' }}
+          KEY_PASSWORD: ${{ steps.keystore.outputs.available == 'true' && secrets.KEY_PASSWORD || '' }}
+        run: ./gradlew ${{ steps.variant.outputs.task }} --stacktrace
+
+      - name: Keystore wieder loeschen
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/release.jks"
 
       # Branchname und Commit-SHA in den Artefaktnamen. Schraegstriche aus
-      # Branchnamen (feature/xyz) sind in Artefaktnamen nicht erlaubt und
-      # werden darum ersetzt.
+      # Branchnamen (feature/xyz) sind in Artefaktnamen nicht erlaubt.
       - name: Artefaktnamen bestimmen
         id: meta
         run: |
           echo "ref_slug=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_OUTPUT"
           echo "sha_short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
-      - name: Debug-APK als Artefakt hochladen
+      - name: APK als Artefakt hochladen
         uses: actions/upload-artifact@v4
         with:
-          name: apk-debug-${{ steps.meta.outputs.ref_slug }}-${{ steps.meta.outputs.sha_short }}
-          path: app/build/outputs/apk/debug/*.apk
+          name: apk-${{ steps.variant.outputs.type }}-${{ steps.meta.outputs.ref_slug }}-${{ steps.meta.outputs.sha_short }}
+          path: app/build/outputs/apk/${{ steps.variant.outputs.dir }}/*.apk
           retention-days: 30
           if-no-files-found: error
 
   # =========================================================================
-  # RELEASE-BUILD: laeuft ausschliesslich bei einem Tag nach Muster v*.
+  # RELEASE: laeuft ausschliesslich bei einem Tag nach Muster v*.
   # Baut signiert, haengt die APK an ein GitHub Release und erzeugt die
   # Release Notes aus den Commits seit dem vorherigen Tag.
   # =========================================================================
@@ -148,14 +218,14 @@ jobs:
       # Der Keystore liegt als Base64 im Secret und wird in RUNNER_TEMP
       # geschrieben - also ausserhalb des Workspace, damit er nie versehentlich
       # in ein Artefakt oder einen Commit geraet.
-      # base64 schreibt direkt in die Datei; der Inhalt taucht nirgends im Log auf.
+      # base64 schreibt direkt in die Datei; der Inhalt taucht nie im Log auf.
       - name: Keystore aus Secret entschluesseln
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           set -euo pipefail
-          if [ -z "${KEYSTORE_BASE64}" ]; then
-            echo "::error::Secret KEYSTORE_BASE64 ist nicht gesetzt."
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::error::Secret KEYSTORE_BASE64 ist nicht gesetzt. Anleitung: docs/CI.md"
             exit 1
           fi
           printf '%s' "${KEYSTORE_BASE64}" | base64 --decode > "${RUNNER_TEMP}/release.jks"
@@ -173,9 +243,6 @@ jobs:
 
       - name: Release-APK bauen und signieren
         env:
-          # Diese vier Variablen liest app/build.gradle.kts aus. Fehlt eine,
-          # wuerde der Build auf die Debug-Signatur zurueckfallen - deshalb
-          # prueft der Schritt danach die Signatur explizit.
           KEYSTORE_PATH: ${{ runner.temp }}/release.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}

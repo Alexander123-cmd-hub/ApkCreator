@@ -1,0 +1,10 @@
+{
+  "appName": "Meine App",
+  "packageId": "de.meinefirma.meineapp",
+  "versionName": "1.0.0",
+  "versionCode": 1,
+  "startUrl": "index.html",
+  "iconBackgroundColor": "#2E6A4F",
+  "orientation": "unspecified",
+  "openExternalLinksInBrowser": true
+}
